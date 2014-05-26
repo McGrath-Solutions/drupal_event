@@ -1,0 +1,396 @@
+<?php
+
+/**
+ * @file
+ * Support for configurable events.
+*/
+
+/**
+ * Implements hook_entity_info().
+ */
+function event_entity_info() {
+  $return = array(
+    'event' => array(
+      'label' => t('Event'),
+      'plural_label' => t('Events'),
+      'description' => t('organization events'),
+      'entity class' => 'Event',
+      'controller class' => 'EventController',
+      'base table' => 'event',
+      'fieldable' => TRUE,
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default Event'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'load hook' => 'event_load',
+      'entity keys' => array(
+        'id' => 'event_id',
+        'bundle' => 'type',
+        'label' => 'label',
+      ),
+      'bundles' => array(),
+      'bundle keys' => array(
+          'bundle' => 'type'
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'access callback' => 'event_access',  
+      'module' => 'event',
+      'metadata controller class' => 'EventMetadataController'
+    ),
+  );
+  $return['event_type'] = array(
+    'label' => t('Event Type'),
+    'plural label' => t('Event Types'),
+    'description' => t('organization event types'),
+    'entity class' => 'EventType',
+    'controller class' => 'EventTypeController',
+    'base table' => 'event_type',
+    'fieldable' => FALSE,
+    'bundle of' => 'event',
+    'exportable' => TRUE,
+    'entity keys' => array(
+      'id' => 'event_type_id',
+      'label' => 'label',
+    ),
+    'access callback' => 'event_type_access',
+    'module' => 'event',
+    'admin ui' => array(
+      'path' => 'admin/events',
+      'file' => 'event.admin.inc',
+      'controller class' => 'EventTypeUIController',
+    ),
+  );
+  return $return;
+}
+
+/**
+* Implements hook_entity_info_alter().
+*/
+function event_entity_info_alter(&$entity_info) {
+  foreach (event_types() as $type => $info) {
+    $entity_info['event']['bundles'][$type] = array(
+      'label' => $info->label,
+      'admin' => array(
+        'path' => 'admin/events/event-types/manage/%event_type',
+        'real path' => 'admin/events/event-types/manage/' . $type,
+        'bundle argument' => 4,
+      ),
+    );
+  }
+}
+
+/**
+* Implements hook_menu().
+*/
+function event_menu() {
+  $items = array();
+  
+  // main event page with filters and table of events with add event link
+  $items['admin/events'] = array(
+    'title' => 'Events',
+    'description' => 'Administer events and event types.',
+    'page callback' => 'event_admin',
+    'page arguments' => array('list'),
+    'access arguments' => array('administer event'),
+    'file' => 'event.admin.inc',
+  );
+  
+  // tab to display event types in table with edit and delete capabilities
+  // with link to add event type
+   $items['admin/events/event-types'] = array(
+    'title' => 'Event Types',
+    'page callback' => 'event_type_admin',
+    'access arguments' => array('administer event_type entities'),
+    'file' => 'event.admin.inc',
+    'type' => MENU_LOCAL_ACTION,
+    'tab_parent' => 'event',
+    'tab_root' => 'event',
+  );
+  
+  
+  /*
+  $items['admin/events/add'] = array(
+    'title' => 'Add event',
+    'page callback' => 'event_admin_add_page',
+    'access arguments' => array('administer event entities'),
+    'file' => 'event.admin.inc',
+    'type' => MENU_LOCAL_ACTION,
+    'tab_parent' => 'event',
+    'tab_root' => 'event',
+  );
+  
+  $event_uri = 'events/%event';
+  $event_uri_argument_position = 1;
+  
+  $items[$event_uri] = array(
+    'title callback' => 'entity_label',
+    'title arguments' => array('event', $event_uri_argument_position),
+    'page callback' => 'event_view',
+    'page arguments' => array($event_uri_argument_position),
+    'access callback' => 'entity_access',
+    'access arguments' => array('view', 'event', $event_uri_argument_position),
+    'file' => 'event.pages.inc',
+  );
+  
+  $items[$event_uri . '/view'] = array(
+    'title' => 'View event',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  
+  $items[$event_uri . '/delete'] = array(
+    'title' => 'Delete event',
+    'title callback' => 'event_label',
+    'title arguments' => array($event_uri_argument_position),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('event_delete_form', $event_uri_argument_position),
+    'access callback' => 'entity_access',
+    'access arguments' => array('edit', 'event', $event_uri_argument_position),
+    'file' => 'event.admin.inc',
+  );
+  
+  $items[$event_uri . '/edit'] = array(
+    'title' => 'Edit',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('event_form', $event_uri_argument_position),
+    'access callback' => 'entity_access',
+    'access arguments' => array('edit', 'event', $event_uri_argument_position),
+    'file' => 'event.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+  );
+  
+  foreach (event_types() as $type => $info) {
+    $items['event/add/' . $type] = array(
+      'title' => 'Add event ',
+      'page callback' => 'event_add',
+      'page arguments' => array(2),
+      'access callback' => 'entity_access',
+      'access arguments' => array('create', 'event', $type),
+      'file' => 'event.admin.inc',
+    );
+  }
+  /*
+  $items['admin/structure/event-types/%event_type/delete'] = array(
+    'title' => 'Delete',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('event_type_form_delete_confirm', 4),
+    'access arguments' => array('administer event types'),
+    'weight' => 1,
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'event.admin.inc',
+  );*/
+    
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function event_permission() {
+  $permissions = array(
+    'administer event types' => array(
+      'title' => t('Administer event types'),
+      'description' => t('Allows users to configure event types and their fields.'),
+      'restrict access' => TRUE,
+    ),
+    'create event entities' => array(
+      'title' => t('Create events'),
+      'description' => t('Allows users to create events.'),
+      'restrict access' => TRUE,
+    ),
+    'view event entities' => array(
+      'title' => t('View events'),
+      'description' => t('Allows users to view events.'),
+      'restrict access' => TRUE,
+    ),
+    'edit any event entities' => array(
+      'title' => t('Edit any events'),
+      'description' => t('Allows users to edit any events.'),
+      'restrict access' => TRUE,
+    ),
+    'edit own event entities' => array(
+      'title' => t('Edit own events'),
+      'description' => t('Allows users to edit own events.'),
+      'restrict access' => TRUE,
+    ),
+  );
+
+  return $permissions;
+}
+
+/**
+ * Implements hook_entity_property_info_alter().
+ */
+function event_entity_property_info_alter(&$info) {
+  
+  $properties = &$info['event']['properties'];
+  
+  foreach (event_types)
+  
+  $properties['created'] = array(
+    'label' => t("Date created"),
+    'type' => 'date',
+    'description' => t("The date the event was posted."),
+    'setter callback' => 'entity_property_verbatim_set',
+    'setter permission' => 'administer events',
+    'schema field' => 'created',
+  );
+  $properties['changed'] = array(
+    'label' => t("Date changed"),
+    'type' => 'date',
+    'description' => t("The date the event was most recently updated."),
+    'setter callback' => 'entity_property_verbatim_set',
+    'setter permission' => 'administer events',
+    'schema field' => 'created',
+  );
+  $properties['type'] = array(
+    'label' => t("Event Type"),
+    'type' => 'event_type',
+    'description' => t("The the event type."),
+    'setter callback' => 'entity_property_verbatim_set',
+    'setter permission' => 'administer events',
+    'schema field' => 'type',
+  );
+}
+
+
+/**
+ * Implements event_entity_property_info_alter().
+
+function event_entity_property_info_alter(&$info) {
+  // Add related profiles to the user object.
+  $properties = &$info['event']['properties'];
+  foreach (event_get_types() as $type_name => $type) {
+    $properties['event_' . $type_name] = array(
+      'type' => 'event',
+      'label' => t('@type_event event', array('@type_name' => drupal_ucfirst($type->label))),
+      'description' => t("The event's @type_name event.", array('@type_name' => $type->label)),
+      'getter callback' => 'event_user_get_properties',
+      'bundle' => $type_name,
+    );
+  }
+}
+ */
+/**
+  * Implements hook_views_api().
+  */
+function event_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'event'),
+  );
+}
+
+/*******************************************************************************
+ ********************************* Task API's **********************************
+ ******************************************************************************/
+
+/**
+* Access callback for Event.
+*/
+function event_access($op, $task, $account = NULL, $entity_type = NULL) {
+  global $user;
+  
+  if (!isset($account)) {
+    $account = $user;
+  }
+  switch ($op) {
+    case 'create':
+      return user_access('administer event entities', $account)
+          || user_access('create event entities', $account);
+    case 'view':
+      return user_access('administer event entities', $account)
+          || user_access('view event entities', $account);
+    case 'edit':
+      return user_access('administer event entities')
+          || user_access('edit any event entities')
+          || (user_access('edit own event entities') && ($task->uid == $account->uid));
+  }
+}
+
+/**
+* Load an event.
+*/
+function event_load($event_id, $reset = FALSE) {
+  $events = event_load_multiple(array($event_id), array(), $reset);
+  return reset($events);
+}
+
+/**
+* Load multiple events based on certain conditions.
+*/
+function event_load_multiple($event_ids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('event', $event_ids, $conditions, $reset);
+}
+
+/**
+* Save event.
+*/
+function event_save($event) {
+  entity_save('event', $event);
+}
+
+/**
+* Delete single event.
+*/
+function event_delete($event) {
+  entity_delete('event', entity_id('event' ,$event));
+}
+
+/**
+* Delete multiple events.
+*/
+function event_delete_multiple($event_ids) {
+  entity_delete_multiple('event', $event_ids);
+}
+
+/*******************************************************************************
+ ****************************** Task Type API's ********************************
+ ******************************************************************************/
+
+/**
+ * Access callback for event Type.
+ */
+function event_type_access($op, $entity = NULL) {
+  return user_access('administer event types');
+}
+
+/**
+* Load event Type.
+*/
+function event_type_load($event_type) {
+  return event_types($event_type);
+}
+
+/**
+ * List of event Types.
+ */
+function event_types($type_name = NULL) {
+  $types = entity_load_multiple_by_name('event_type', isset($type_name) ? array($type_name) : FALSE);
+  return isset($type_name) ? reset($types) : $types;
+}
+
+/**
+* Save event type entity.
+*/
+function event_type_save($event_type) {
+  entity_save('event_type', $event_type);
+}
+
+/**
+* Delete single event type.
+*/
+function event_type_delete($event_type) {
+  entity_delete('event_type', entity_id('event_type' ,$event_type));
+}
+
+/**
+* Delete multiple event types.
+*/
+function event_type_delete_multiple($event_type_ids) {
+  entity_delete_multiple('event_type', $event_type_ids);
+}
